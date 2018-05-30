@@ -5,11 +5,11 @@ Fediverse + redirect = Fedirect
 
 Find user page by username.
 
-e.g. https://brined.fish/links/KayMW@brined.fish will 302 redirect to https://s.brined.fish/@KayMW
+e.g. https://brined.fish/link/KayMW@brined.fish will 302 redirect to https://s.brined.fish/@KayMW
 
 Tested on Mastodon and GNU Social.
 
-Special thank to [niconiconi@cybre.space](https://brined.fish/links/niconiconi@cybre.space)( @biergaizi ) for naming the repo.
+Special thank to [niconiconi@cybre.space](https://brined.fish/link/niconiconi@cybre.space)( @biergaizi ) for naming the repo.
 
 
 Deploy
