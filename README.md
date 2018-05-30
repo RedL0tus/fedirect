@@ -9,6 +9,8 @@ e.g. https://brined.fish/links/KayMW@brined.fish will 302 redirect to https://s.
 
 Tested on Mastodon and GNU Social.
 
+Special thank to [niconiconi@cybre.space](https://brined.fish/links/niconiconi@cybre.space)( @biergaizi ) for naming the repo.
+
 
 Deploy
 ------
