@@ -14,8 +14,8 @@ PORT = 9090
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         print("Received request at:" + self.path)
-        splitted_path = self.path.split("/")
-        for i in splitted_path:
+        path_splitted = self.path.split("/")
+        for i in path_splitted:
             if '@' in i:
                 try:
                     link = get_link(i)
@@ -32,7 +32,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 <center><h1>302 Found</h1></center>\
                 <hr><center>Salted Fish</center>\
                 </body></html>'.encode('UTF-8'))
-                break
+                return(0)
         print("Invalid request")
         self.send_response(500)
         self.send_header('Content-type','text/html')
@@ -43,6 +43,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         <center><h1>500 Invalid Request</h1>\
         </center><hr><center>Salted Fish</center>\
         </body></html>'.encode('UTF-8'))
+        return(0)
             
 
 def start_server():
@@ -54,6 +55,12 @@ def start_server():
         print("Keyboard Interrupt")
         exit(1)
 
+def is_webfinger(host_link):
+    if '@template' in host_link:
+        if "webfinger?resource={uri}" in host_link['@template']:
+            return True
+    return False
+
 def get_link(username):
     username_splitted = username.split('@')
     if len(username_splitted) != 2:
@@ -63,14 +70,12 @@ def get_link(username):
     host_link = host_meta['XRD']['Link']
     if type(host_link) == list:
         for i in host_link:
-            if '@template' in i:
-                if "webfinger?resource={uri}" in i['@template']:
-                    host_link = i['@template']
-                    break
+            if is_webfinger(i):
+                host_link = i['@template']
+                break
     elif type(host_link) == collections.OrderedDict:
-        if '@template' in host_link:
-            if "webfinger?resource={uri}" in host_link['@template']:
-                host_link = host_link['@template']
+        if is_webfinger(host_link):
+            host_link = host_link['@template']
     else:
         raise ValueError('Unsupported platform')
     user_meta = json.loads(http.request('GET', host_link.replace('{uri}', 'acct%3A' + username).replace('@', '%40')).data.decode("UTF-8"))
