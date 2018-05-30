@@ -11,6 +11,8 @@ from http.server import BaseHTTPRequestHandler,HTTPServer
 HOSTNAME = 'localhost'
 PORT = 9090
 
+CACHE = dict()
+
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         print("Received request at:" + self.path)
@@ -61,7 +63,7 @@ def is_webfinger(host_link):
             return True
     return False
 
-def get_link(username):
+def fetch_link(username):
     username_splitted = username.split('@')
     if len(username_splitted) != 2:
         raise ValueError('Invalid username')
@@ -80,6 +82,14 @@ def get_link(username):
         raise ValueError('Unsupported platform')
     user_meta = json.loads(http.request('GET', host_link.replace('{uri}', 'acct%3A' + username).replace('@', '%40')).data.decode("UTF-8"))
     return(user_meta['aliases'][0])
+
+def get_link(username):
+    if username not in CACHE:
+        print(username + ': Not found in cache, trying to fetch link...')
+        CACHE[username] = fetch_link(username)
+    else:
+        print(username + ': (Cached)' + CACHE[username])
+    return CACHE[username]
 
 
 if __name__ == '__main__':
