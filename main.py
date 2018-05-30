@@ -22,14 +22,14 @@ class RequestHandler(BaseHTTPRequestHandler):
                 except Exception:
                     break
                 print("Redirecting to: " + link)
-                self.send_response(301)
+                self.send_response(302)
                 self.send_header('Location', link)
                 self.send_header('Content-type','text/html')
                 self.end_headers()
                 self.wfile.write('<!DOCTYPE html><html><head>\
-                <title>301 Moved Permanently</title>\
+                <title>302 Found</title>\
                 </head><body bgcolor="white">\
-                <center><h1>301 Moved Permanently</h1></center>\
+                <center><h1>302 Found</h1></center>\
                 <hr><center>Salted Fish</center>\
                 </body></html>'.encode('UTF-8'))
                 break
