@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 #-*- encoding: UTF-8 -*-
 
+import os
 import json
 import urllib3
 import xmltodict
@@ -49,11 +50,21 @@ class RequestHandler(BaseHTTPRequestHandler):
             
 
 def start_server():
+    global CACHE
+    if os.path.isfile('cache.json'):
+        with open('cache.json', 'r') as cache:
+            try:
+                CACHE = json.load(cache)
+            except json.decoder.JSONDecodeError:
+                print('Invalid cache file.')
+                os.remove('cache.json')
     try:
         print("Server started...")
         server = HTTPServer((HOSTNAME, PORT), RequestHandler)
         server.serve_forever()
     except KeyboardInterrupt:
+        with open('cache.json', 'w') as cache:
+            json.dump(CACHE, cache)
         print("Keyboard Interrupt")
         exit(1)
 
@@ -84,6 +95,7 @@ def fetch_link(username):
     return(user_meta['aliases'][0])
 
 def get_link(username):
+    global CACHE
     if username not in CACHE:
         print(username + ': Not found in cache, trying to fetch link...')
         CACHE[username] = fetch_link(username)
