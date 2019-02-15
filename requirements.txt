@@ -1,2 +1,4 @@
-urllib3
+sanic
+uvloop
+aiohttp
 xmltodict

@@ -1,108 +1,122 @@
 #!/usr/bin/env python3
-#-*- encoding: UTF-8 -*-
+# -*- encoding: UTF-8 -*-
 
-import os
-import json
-import urllib3
+import uvloop
 import xmltodict
-import collections
 
-from http.server import BaseHTTPRequestHandler,HTTPServer
+from collections import OrderedDict
 
-HOSTNAME = 'localhost'
-PORT = 9090
+from sanic import Sanic
+from sanic import response
+from sanic import exceptions
+from sanic.log import logger
 
+from aiohttp import ClientSession
+from aiohttp.client_exceptions import ContentTypeError
+
+# Config
+HOST = '0.0.0.0'
+PORT = '9090'
+
+# Main program
+
+# Initialize
+LOOP = uvloop.new_event_loop()
 CACHE = dict()
+CLIENT = ClientSession(loop=LOOP)
 
-class RequestHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        print("Received request at:" + self.path)
-        path_splitted = self.path.split("/")
-        for i in path_splitted:
-            if '@' in i:
-                try:
-                    link = get_link(i)
-                except Exception:
-                    break
-                print("Redirecting to: " + link)
-                self.send_response(302)
-                self.send_header('Location', link)
-                self.send_header('Content-type','text/html')
-                self.end_headers()
-                self.wfile.write('<!DOCTYPE html><html><head>\
-                <title>302 Found</title>\
-                </head><body bgcolor="white">\
-                <center><h1>302 Found</h1></center>\
-                <hr><center>Salted Fish</center>\
-                </body></html>'.encode('UTF-8'))
-                return(0)
-        print("Invalid request")
-        self.send_response(500)
-        self.send_header('Content-type','text/html')
-        self.end_headers()
-        self.wfile.write('<!DOCTYPE html><html><head>\
-        <title>500 Invalid Request</title>\
-        </head><body bgcolor="white">\
-        <center><h1>500 Invalid Request</h1>\
-        </center><hr><center>Salted Fish</center>\
-        </body></html>'.encode('UTF-8'))
-        return(0)
-            
+app = Sanic(__name__)
 
-def start_server():
-    global CACHE
-    if os.path.isfile('cache.json'):
-        with open('cache.json', 'r') as cache:
-            try:
-                CACHE = json.load(cache)
-            except json.decoder.JSONDecodeError:
-                print('Invalid cache file.')
-                os.remove('cache.json')
-    try:
-        print("Server started...")
-        server = HTTPServer((HOSTNAME, PORT), RequestHandler)
-        server.serve_forever()
-    except KeyboardInterrupt:
-        with open('cache.json', 'w') as cache:
-            json.dump(CACHE, cache)
-        print("Keyboard Interrupt")
-        exit(1)
 
-def is_webfinger(host_link):
-    if '@template' in host_link:
-        if "webfinger?resource={uri}" in host_link['@template']:
+def is_webfinger(link):
+    """
+    Test the URL is webfinger or not.
+    :param link: link of the URL that is going to be tested.
+    :return: True if yes, False if no.
+    """
+    if '@template' in link:
+        if 'webfinger?resource={uri}' in link['@template']:
             return True
     return False
 
-def fetch_link(username):
-    username_splitted = username.split('@')
-    if len(username_splitted) != 2:
-        raise ValueError('Invalid username')
-    http = urllib3.PoolManager(cert_reqs='CERT_REQUIRED')
-    host_meta = xmltodict.parse(http.request('GET', 'https://' + username_splitted[1] + '/.well-known/host-meta').data)
-    host_link = host_meta['XRD']['Link']
-    if type(host_link) == list:
-        for i in host_link:
-            if is_webfinger(i):
-                host_link = i['@template']
-                break
-    elif type(host_link) == collections.OrderedDict:
-        if is_webfinger(host_link):
-            host_link = host_link['@template']
-    else:
-        raise ValueError('Unsupported platform')
-    user_meta = json.loads(http.request('GET', host_link.replace('{uri}', 'acct%3A' + username).replace('@', '%40')).data.decode("UTF-8"))
-    return(user_meta['aliases'][0])
 
-def get_link(username):
-    global CACHE
-    if username not in CACHE:
-        print(username + ': Not found in cache, trying to fetch link...')
-        CACHE[username] = fetch_link(username)
+async def fetch(url):
+    """
+    Fetch data from url and transform it into an OrderedDict or something similar.
+    Only supports XML and JSON.
+    :param url: The URL that need :to be fetched.
+    :return: JSON object if the URL returns JSON, OrderedDict if it returns XML.
+    """
+    async with CLIENT.get(url) as resp:
+        if resp.status == 200:
+            try:
+                return await resp.json()
+            except ContentTypeError:
+                return xmltodict.parse(await resp.text())
+
+
+@app.route("/<username>")
+async def fetch_link(request, username):
+    """
+    Fetch link from the given username
+    :param request: The thing that sanic give us, but seems it is useless in this case.
+    :param username: The requested username.
+    :return: Redirection if the profile page's link has been found.
+    """
+    logger.debug(request)  # Stop IDEA from blaming me about unused variable
+    if username in CACHE.keys():
+        logger.info('Cache hit: [ %s: %s ]' % (username, CACHE[username]))
+        return response.redirect(CACHE[username])
+    name = username.split('@')
+    if len(name) != 2:
+        raise exceptions.InvalidUsage('Invalid username', status_code=400)
+    host_meta = await fetch('https://' + name[1] + '/.well-known/host-meta')
+    try:
+        host_links = host_meta['XRD']['Link']
+    except TypeError:
+        raise exceptions.InvalidUsage('Unsupported platform', status_code=400)
+    # Get Webfinger's URL
+    webfinger = ''
+    if type(host_links) == list:
+        for link in host_links:
+            if is_webfinger(link):
+                webfinger = link['@template']
+                break
+    elif type(host_links) == OrderedDict:
+        if is_webfinger(host_links):
+            webfinger = host_links['@template']
     else:
-        print(username + ': (Cached)' + CACHE[username])
-    return CACHE[username]
+        raise exceptions.InvalidUsage('Unsupported platform', status_code=400)
+    # Request Webfinger for user's meta
+    user_meta = await fetch(webfinger.replace('{uri}', 'acct%3A' + username.replace('@', '%40')))
+    try:
+        user_link = ''
+        if 'aliases' in user_meta.keys():
+            # If the server provides aliases
+            user_link = user_meta['aliases'][0]
+        elif 'links' in user_meta.keys():
+            # Otherwise, read `links`
+            for link in user_meta['links']:
+                if link['rel'] == 'self' or link['rel'] == 'http://webfinger.net/rel/profile-page':
+                    user_link = link['href']
+        else:
+            raise exceptions.InvalidUsage('Unsupported platform', status_code=400)
+        if user_link:
+            logger.info('Adding to cache: [ %s: %s ], redirecting...' % (username, user_link))
+            CACHE[username] = user_link
+            return response.redirect(user_link)
+        else:
+            raise exceptions.ServerError('I don\'t really know what\'s going on...', status_code=500)
+    except Exception:
+        raise exceptions.InvalidUsage('Unknown error, probably the user doesn\'t exist.', status_code=500)
 
 
 if __name__ == '__main__':
-    start_server()
+    server = app.create_server(host=HOST, port=PORT)  # Because it uses the same event loop with aiohttp
+    # Start the server
+    try:
+        LOOP.run_until_complete(server)
+        LOOP.run_forever()
+    except Exception as e:
+        LOOP.stop()
+        raise RuntimeError(e)  # Stop IDEA from blaming me x2.
